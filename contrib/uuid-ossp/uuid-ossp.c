@@ -116,6 +116,9 @@ PG_FUNCTION_INFO_V1(uuid_generate_v3);
 PG_FUNCTION_INFO_V1(uuid_generate_v4);
 PG_FUNCTION_INFO_V1(uuid_generate_v5);
 
+
+PG_FUNCTION_INFO_V1(sys_guid);
+
 #ifdef HAVE_UUID_OSSP
 
 static void
@@ -548,5 +551,44 @@ uuid_generate_v5(PG_FUNCTION_ARGS)
 #else
 	return uuid_generate_internal(UUID_MAKE_V5, (unsigned char *) ns,
 								  VARDATA_ANY(name), VARSIZE_ANY_EXHDR(name));
+#endif
+}
+
+
+Datum
+sys_guid(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_UUID_OSSP
+	uuid_t	   *uuid = get_cached_uuid_t(0);
+	char	   *str;
+	uuid_rc_t	rc;
+
+	rc = uuid_make(uuid, UUID_MAKE_V4, NULL, NULL);
+	if (rc != UUID_RC_OK)
+		pguuid_complain(rc);
+	str = uuid_to_string(uuid);
+
+	return DirectFunctionCall1(uuid_in, CStringGetDatum(str));
+#elif defined(HAVE_UUID_E2FS)
+	uuid_t		uu;
+	char		strbuf[40];
+
+	uuid_generate_random(uu);
+	uuid_unparse(uu, strbuf);
+
+	return DirectFunctionCall1(uuid_in, CStringGetDatum(strbuf));
+#else /* BSD */
+	char		strbuf[40];
+
+	snprintf(strbuf, sizeof(strbuf),
+			 "%08lx-%04x-%04x-%04x-%04x%08lx",
+			 (unsigned long) arc4random(),
+			 (unsigned) (arc4random() & 0xffff),
+			 (unsigned) ((arc4random() & 0xfff) | 0x4000),
+			 (unsigned) ((arc4random() & 0x3fff) | 0x8000),
+			 (unsigned) (arc4random() & 0xffff),
+			 (unsigned long) arc4random());
+
+	return DirectFunctionCall1(uuid_in, CStringGetDatum(strbuf));
 #endif
 }
